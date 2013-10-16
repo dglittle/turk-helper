@@ -1,0 +1,193 @@
+<html>
+<head>
+<title>Hello</title>
+<style>
+</style>
+</head>
+<body>
+
+<script src="//code.jquery.com/jquery-2.0.3.min.js"></script>
+<script src="/gl519/jquery.cookie.js"></script>
+
+<script src="/gl519/index.js"></script>
+<script src="/gl519/random.js"></script>
+
+<script src="utils.js"></script>
+
+<script>
+
+function drawMain() {
+    var d = $('<div/>')
+    d.append($('<div/>').text('what to do?'))
+    d.append($('<button/>').text('vote').click(function () {
+        setHash({
+            state : 'vote',
+            write : _.randomString(10)
+        })
+    }))
+    return d
+}
+
+function drawVote(hash) {
+    var d = $('<div/>')
+    d.append(createThrobber())
+
+    var sep = '<<SEPARATOR>>'
+
+    function parseModel(model) {
+        var a = _.map(model.text.split(sep), _.trim)
+        return {
+            title : a[0],
+            options : a.slice(1)
+        }
+    }
+
+    function drawModel(model, seed, cb) {
+        Math.randomSeed(seed)
+        var a = parseModel(model)
+
+        var d = $('<div/>')
+        d.append($('<div/>').html(a.title))
+        _.each(_.shuffle(a.options), function (option) {
+            d.append($('<div/>').append($('<button/>').html(option).click(function () {
+                if (cb) cb(option)
+            })))
+        })
+        return d
+    }
+
+    function drawResults(model, votes) {
+        var a = parseModel(model)
+        var optionSet = {}
+        var options = []
+        _.each(votes || [], function (vote) {
+            if (_.setAdd(optionSet, vote.option))
+                options.push(vote)
+        })
+        _.each(a.options, function (option) {
+            if (_.setAdd(optionSet, option)) {
+                options.push({
+                    option : option,
+                    count : 0
+                })
+            }
+        })
+        options = _.sort(options, function (o) { return -o.count })
+
+        var d = $('<div/>')
+        d.append($('<div style="width:50px"/>').text('votes'))
+        _.each(options, function (option) {
+            d.append($('<div style="float:left;width:50px;border-top:1px solid black"/>').text(option.count))
+            d.append($('<div style="float:left;border-top:1px solid black">').html(option.option))
+            d.append($('<div style="clear:both"/>'))
+        })
+        return d
+    }
+
+    if (hash.write) {
+        rpc('voteGet', {
+            write : hash.write
+        }, function (arg) {
+            d.empty()
+            var model = arg.model || {
+                text : '',
+                time : 0
+            }
+
+            var input = $('<textarea style="width:50%;float:left;height:300px;"/>')
+            input.val(model.text || 'Which do you like best?\n' +
+                sep + '\n' +
+                'hello\n' +
+                sep + '\n' +
+                '<img src="http://upload.wikimedia.org/wikipedia/commons/6/63/Wikipedia-logo.png"></img>\n')
+            d.append(input)
+
+            createSave(input, function () {
+                return model.text
+            }, function (s) {
+                rpc('voteSave', {
+                    write : hash.write,
+                    model : {
+                        text : input.val(),
+                        time : _.time()
+                    }
+                }, function (arg) {
+                    if (arg.model.time > model.time) {
+                        model = arg.model
+                    }
+                    s.update()
+                    updatePreview()
+                    updateResults(arg.votes)
+                })
+            })
+
+            var preview = $('<div style="width:50%;float:left;"/>')
+            d.append(preview)
+            function updatePreview() {
+                preview.empty().append(drawModel(model, _.time(), function () {
+                    alert('this is just a preview, pressing the buttons will do nothing.. except show this dialog')
+                }))
+            }
+            updatePreview()
+
+            d.append($('<div style="clear:both"/>'))
+            d.append($('<input type="text" style="width:100%"/>').val(location.href.match(/[^#]*/)[0] + '#' + _.json({ state : 'vote', read : arg.read })))
+
+            var results = $('<div/>')
+            d.append(results)
+            function updateResults(votes) {
+                results.empty().append(drawResults(model, votes))
+            }
+            updateResults(arg.votes)
+        })
+    } else if (hash.read) {
+        rpc('voteGet', {
+            read : hash.read
+        }, function (arg) {
+            d.empty()
+            d.append(drawModel(arg.model, arg.user, function (o) {
+                d.empty().append(createThrobber())
+                rpc('voteVote', {
+                    read : arg.read,
+                    option : o
+                }, function () {
+                    alert('submitted!')
+                })
+            }))
+        })
+    }
+    return d
+}
+
+function setHash(s) {
+    if (typeof(s) == 'string') {
+        location.hash = s
+    } else {
+        setHash(_.json(s))
+    }
+}
+
+function onHash(hash) {
+    try {
+        hash = _.unJson(hash.slice(1))
+    } catch (e) {
+        hash = null
+    }
+
+    if (!hash || hash.state == 'main') {
+        $('body').empty().append(drawMain(hash))
+    } else if (hash.state == 'vote') {
+        $('body').empty().append(drawVote(hash))
+    }
+}
+
+$(function () {
+    window.onhashchange = function () {
+        onHash(location.hash)
+    }
+    window.onhashchange()
+})
+
+</script>
+</body>
+</html>
