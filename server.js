@@ -60,13 +60,11 @@ _.run(function () {
 
     var g_rpc_version = 1
 
+    app.use('/static', express.static('./static'))
     app.get('/', function (req, res) {
         res.cookie('rpc_version', g_rpc_version, { httpOnly: false})
         res.cookie('rpc_token', _.randomString(10), { httpOnly: false})
         res.sendfile('./index.html')
-    })
-    app.get('/utils.js', function (req, res) {
-        res.sendfile('./utils.js')
     })
 
     var rpc = {}
@@ -79,7 +77,7 @@ _.run(function () {
                     throw new Error('token mismatch')
                 var input = _.unJson(req.method.match(/post/i) ? req.body : _.unescapeUrl(req.url.match(/\?(.*)/)[1]))
                 function runFunc(input) {
-                    return rpc[input.func].apply(null, [input.arg, req, res])
+                    return rpc[input.func](input.arg, req, res)
                 }
                 if (input instanceof Array)
                     var output = _.map(input, runFunc)
@@ -97,60 +95,40 @@ _.run(function () {
         })
     })
 
-    rpc.voteGet = function (arg, req) {
-        if (arg.write) {
-            db.collection('votes').ensureIndex({ read : 1 }, { background : true })
-            try {
-                _.p(db.collection('votes').insert({
-                    _id : arg.write,
-                    read : _.randomString(10)
-                }, _.p()))
-            } catch (e) {
-                if (e.name == 'MongoError') {
-                    // I guess there already is one, fine
-                } else throw e
+    rpc.vote = function (arg, req) {
+        if (arg.ballot) {
+            var v = {
+                _id : _.randomString(10),
+                ballot : arg.ballot
             }
-            return _.p(db.collection('votes').findOne({
-                _id : arg.write
+            _.p(db.collection('votes').insert(v, _.p()))
+            return v._id
+        } else if (_.has(arg, 'vote')) {
+            _.p(db.collection('votes').update(_.object([
+                ['_id', arg._id],
+                ['votes.' + req.user, { $exists : false }]
+            ]), {
+                $set : _.object([
+                    ['votes.' + req.user, arg.vote]
+                ]),
+                $inc : _.object([
+                    ['voteCounts.' + arg.vote, 1]
+                ])
             }, _.p()))
+        } else if (arg._id) {
+            var v = _.p(db.collection('votes').findOne(_.object([
+                ['_id', arg._id],
+                ['votes.' + req.user, { $exists : false }]
+            ]), { votes : 0, voteCounts : 0 }, _.p()))
+            if (v) {
+                v.randomSeed = req.user
+                return v
+            }
+
+            return _.p(db.collection('votes').findOne({ _id : arg._id }, { votes : 0 }, _.p()))
         } else {
-            var o = _.p(db.collection('votes').findOne({
-                read : arg.read
-            }, _.p()))
-            o.user = req.user
-            return o
+            throw "not sure what to do.."
         }
-    }
-
-    rpc.voteSave = function (arg, req) {
-        _.p(db.collection('votes').update({
-            _id : arg.write,
-            $or : [
-                { model : { $exists : false } },
-                { 'model.time' : { $lt : arg.model.time } }
-            ]
-        }, {
-            $set : {
-                model : arg.model
-            }
-        }, _.p()))
-        return _.p(db.collection('votes').findOne({
-            _id : arg.write
-        }, _.p()))
-    }
-
-    rpc.voteVote = function (arg, req) {
-        var optionHash = _.md5(arg.option)
-        _.p(db.collection('voteVotes').insert({
-            _id : arg.read + ':' + req.user,
-            optionHash : optionHash
-        }, _.p()))
-        _.p(db.collection('votes').update({
-            read : arg.read
-        }, {
-            $set : _.object([['votes.' + optionHash + '.option', arg.option]]),
-            $inc : _.object([['votes.' + optionHash + '.count', 1]])
-        }, _.p()))
     }
 
     app.use(express.errorHandler({

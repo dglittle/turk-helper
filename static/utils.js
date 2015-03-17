@@ -37,23 +37,6 @@ function rpc(func, arg, cb) {
     }, 0)
 }
 
-function createThrobber() {
-    var d = $("<div />");
-    for (var i = 0; i < 10; i++) {
-        $("<span />").text(".")
-                     .appendTo(d)
-                     .css({ color: i === 0 ? "#000" : "#ccc" });
-    }
-    var timer = setInterval(function () {
-        if ($.contains(document.documentElement, d[0])) {
-            d.find("span:last").prependTo(d);
-        } else {
-            clearInterval(timer);
-        }
-    }, 300);
-    return d;
-}
-
 ///
 
 function mturkSubmit() {
@@ -138,4 +121,66 @@ function createSave(textarea, getSavedText, onSave) {
     textarea.keydown(s.update).keyup(s.update).change(s.update)
 
     return s
+}
+
+var whenIdleTimeout = null
+function whenIdle(func, time) {
+    clearTimeout(whenIdleTimeout)
+    whenIdleTimeout = setTimeout(func, time || 1000)
+}
+
+function rotate(me, amount) {
+    var s = 'rotate(' + amount + 'deg)'
+    me.css({
+        '-ms-transform' : s,
+        '-moz-transform' : s,
+        '-webkit-transform' : s,
+        '-o-transform' : s
+    })
+    return me
+}
+
+jQuery.fn.extend({
+    rotate : function (amount) {
+        return this.each(function () {
+            rotate($(this), amount)
+        })
+    }
+})
+
+function createThrobber() {
+    var d = $('<div style="font-size:xx-large"/>').text('\u25DC')
+    var start = _.time()
+    var i = setInterval(function () {
+        if ($.contains(document.documentElement, d[0])) {
+            d.rotate(Math.round((_.time() - start) / 1000 * 360 * 2 % 360))
+        } else
+            clearInterval(i)
+    }, 30)
+    return d;
+}
+
+function calcWidth(d) {
+    var farAway = $('<div/>').css({
+        'position' : 'absolute',
+        'left' : '-1000px',
+        'top' : '-1000px'
+    })
+    $('body').append(farAway)
+    farAway.append(d)
+    var w = d.outerWidth()
+    farAway.detach()
+    return w
+}
+
+function createFacebookShareLink(url, img, title, summary) {
+    return 'http://www.facebook.com/sharer/sharer.php?s=100&p[url]=' + _.escapeUrl(url) + '&p[images][0]=' + _.escapeUrl(img) + '&p[title]=' + _.escapeUrl(title) + '&p[summary]=' + _.escapeUrl(summary)
+}
+
+function createTwitterShareLink(tweet) {
+    return 'http://twitter.com/home?status=' + _.escapeUrl(tweet)
+}
+
+function createGooglePlusShareLink(url) {
+    return 'https://plus.google.com/share?url=' + _.escapeUrl(url)
 }

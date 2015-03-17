@@ -1,7 +1,19 @@
 <html>
 <head>
 <title>Hello</title>
+<link rel="stylesheet" type="text/css" href="/static/utils.css">
 <style>
+
+body {
+    margin: 0px;
+}
+table {
+    border-collapse: collapse;
+}
+th, td {
+    padding: 20;
+}
+
 </style>
 </head>
 <body>
@@ -12,7 +24,7 @@
 <script src="/gl519/index.js"></script>
 <script src="/gl519/random.js"></script>
 
-<script src="utils.js"></script>
+<script src="/static/utils.js"></script>
 
 <script>
 
@@ -20,170 +32,201 @@ function drawMain() {
     var d = $('<div/>')
     d.append($('<div/>').text('what to do?'))
     d.append($('<button/>').text('vote').click(function () {
-        setHash({
-            state : 'vote',
-            write : _.randomString(10)
-        })
+        setHash('vote')
     }))
     return d
 }
 
 function drawVote(hash) {
     var d = $('<div/>')
-    d.append(createThrobber())
 
     var sep = '<<SEPARATOR>>'
 
-    function parseModel(model) {
-        var a = _.map(model.text.split(sep), _.trim)
+    function parseBallot(text) {
+        var a = _.map(text.split(sep), _.trim)
         return {
-            title : a[0],
+            question : a[0],
             options : a.slice(1)
         }
     }
 
-    function drawModel(model, seed, cb) {
-        Math.randomSeed(seed)
-        var a = parseModel(model)
-
+    function drawBallot(ballot, seed, cb, voteCounts) {
         var d = $('<div/>')
-        d.append($('<div/>').html(a.title))
-        _.each(_.shuffle(a.options), function (option) {
-            d.append($('<div/>').append($('<button/>').html(option).click(function () {
-                if (cb) cb(option)
-            })))
-        })
-        return d
-    }
+        d.append($('<div/>').html(ballot.question))
 
-    function drawResults(model, votes) {
-        var a = parseModel(model)
-        var optionSet = {}
-        var options = []
-        _.each(votes || [], function (vote) {
-            if (_.setAdd(optionSet, vote.option))
-                options.push(vote)
-        })
-        _.each(a.options, function (option) {
-            if (_.setAdd(optionSet, option)) {
-                options.push({
-                    option : option,
-                    count : 0
-                })
-            }
-        })
-        options = _.sort(options, function (o) { return -o.count })
-
-        var d = $('<div/>')
-        d.append($('<div style="width:50px"/>').text('votes'))
-        _.each(options, function (option) {
-            d.append($('<div style="float:left;width:50px;border-top:1px solid black"/>').text(option.count))
-            d.append($('<div style="float:left;border-top:1px solid black">').html(option.option))
-            d.append($('<div style="clear:both"/>'))
-        })
-        return d
-    }
-
-    if (hash.write) {
-        rpc('voteGet', {
-            write : hash.write
-        }, function (arg) {
-            d.empty()
-            var model = arg.model || {
-                text : '',
-                time : 0
-            }
-
-            var input = $('<textarea style="width:50%;float:left;height:300px;"/>')
-            input.val(model.text || 'Which do you like best?\n' +
-                sep + '\n' +
-                'hello\n' +
-                sep + '\n' +
-                '<img src="http://upload.wikimedia.org/wikipedia/commons/6/63/Wikipedia-logo.png"></img>\n')
-            d.append(input)
-
-            createSave(input, function () {
-                return model.text
-            }, function (s) {
-                rpc('voteSave', {
-                    write : hash.write,
-                    model : {
-                        text : input.val(),
-                        time : _.time()
-                    }
-                }, function (arg) {
-                    if (arg.model.time > model.time) {
-                        model = arg.model
-                    }
-                    s.update()
-                    updatePreview()
-                    updateResults(arg.votes)
-                })
+        var buttons = _.map(ballot.options, function (option, i) {
+            return $('<button style="padding:10px"/>').html(option).click(function () {
+                if (cb) cb(i)
             })
-
-            var preview = $('<div style="width:50%;float:left;"/>')
-            d.append(preview)
-            function updatePreview() {
-                preview.empty().append(drawModel(model, _.time(), function () {
-                    alert('this is just a preview, pressing the buttons will do nothing.. except show this dialog')
-                }))
-            }
-            updatePreview()
-
-            d.append($('<div style="clear:both"/>'))
-            d.append($('<input type="text" style="width:100%"/>').val(location.href.match(/[^#]*/)[0] + '#' + _.json({ state : 'vote', read : arg.read })))
-
-            var results = $('<div/>')
-            d.append(results)
-            function updateResults(votes) {
-                results.empty().append(drawResults(model, votes))
-            }
-            updateResults(arg.votes)
         })
-    } else if (hash.read) {
-        rpc('voteGet', {
-            read : hash.read
-        }, function (arg) {
-            d.empty()
-            d.append(drawModel(arg.model, arg.user, function (o) {
-                d.empty().append(createThrobber())
-                rpc('voteVote', {
-                    read : arg.read,
-                    option : o
-                }, function () {
-                    alert('submitted!')
-                })
+
+        var maxWidth = _.max(_.map(buttons, function (b) { return calcWidth(b) }))
+        _.each(buttons, function (b) {
+            b.width(maxWidth)
+        })
+
+        buttons = _.map(buttons, function (b, i) {
+            var d = $('<div style="margin-top:20px"/>')
+            d.append(b)
+            if (voteCounts) {
+                b.attr('disabled', 'disabled')
+                d.append($('<span/>').text(' \u00D7 ' + (voteCounts[i] || 0)))
+            }
+            return d
+        })
+
+        if (seed) {
+            Math.randomSeed(seed)
+            _.shuffle(buttons)
+        }
+
+        _.each(buttons, function (b) {
+            d.append(b)
+        })
+
+        return d
+    }
+
+    function drawRecruitThing(ballot) {
+        var d = $('<div style="color:grey"/>')
+        d.append($('<div style="font-size:small;margin-bottom:10px"/>').text('share url to get votes'))
+
+        var shareMessage = $('<div/>').html(ballot.question).text()
+        var shareUrl = location.href
+        var shares = [
+            {
+                img : '/static/facebook_grey.png',
+                url : createFacebookShareLink(shareUrl, null, shareMessage, 'vote to see the results!')
+            },
+            {
+                img : '/static/twitter_grey.png',
+                url : createTwitterShareLink(shareMessage + ' ' + shareUrl + ' vote to see the results!')
+            },
+            {
+                img : '/static/google_plus_grey.png',
+                url : createGooglePlusShareLink(shareUrl)
+            },
+            {
+                img : '/static/mturk_grey.png'
+            }
+        ]
+
+        _.each(shares, function (share, i) {
+            if (i == shares.length - 1) {
+                d.append($('<span style="font-size:small;width:32px;margin-right:10px;padding:15px;position:relative;top:-12px"/>').text('or'))
+            }
+            d.append($('<img style="cursor:pointer;opacity:.5;margin-right:10px"/>').attr('src', share.img).click(function () {
+                window.open(share.url, 'share url', 'height=400,width=500,resizable=yes')
             }))
         })
+
+        return d
     }
+
+    if (hash[1]) {
+        d.css('margin', '20px')
+        d.append(createThrobber())
+        rpc('vote', { _id : hash[1] }, function (v) {
+            d.empty()
+            if (v.randomSeed) {
+                function vote(i) {
+                    d.empty().append(createThrobber())
+                    rpc('vote', { _id : hash[1], vote : i }, function () {
+                        onHash()
+                    })
+                }
+
+                d.append(drawBallot(v.ballot, v.randomSeed, vote))
+                d.append($('<div style="margin-top:20px"/>').text('vote to see results, or ').append($('<span style="cursor:pointer;color:blue"/>').text('abstain and see results').click(function () { vote(-1) })))
+            } else {
+                d.append(drawBallot(v.ballot, null, function () {}, v.voteCounts || {}))
+            }
+            d.append(drawRecruitThing(v.ballot).css('margin-top', '40px'))
+        })
+    } else {
+
+        var examples = [
+            'Which do you like best?\n\n' +
+                sep + '\n\n' +
+                'apples\n\n' +
+                sep + '\n\n' +
+                'oranges\n\n' +
+                sep + '\n\n' +
+                'bananas\n\n',
+            'Which <b style="font-size:x-large"><i>tastes</i></b> best?\n\n' +
+                sep + '\n\n' +
+                '<img width="64" src="http://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Red_Apple.jpg/220px-Red_Apple.jpg"></img><br/>\napples\n\n' +
+                sep + '\n\n' +
+                '<img width="64" src="http://tasty-dishes.com/data_images/encyclopedia/orange/orange-04.jpg"><br/>\noranges\n\n'
+        ]
+
+        function setExample(i) {
+            if (input.val() && examples.indexOf(input.val()) < 0 && !confirm('this will overwrite your work, continue?')) return
+            input.val(examples[i])
+            updatePreview()
+        }
+
+        var left = $('<div/>')
+
+        _.each(examples, function (e, i) {
+            left.append($('<span style="cursor:pointer;font-size:small;font-weight:bold;color:blue;margin-right:20px">').text('example ' + (i + 1)).click(function () {
+                setExample(i)
+            }))
+        })
+
+        var input = $('<textarea style="width:100%;height:300px;margin-top:20px"/>')
+        left.append(input)
+        function onChange() {
+            whenIdle(updatePreview, 300)
+        }
+        input.keydown(onChange).keyup(onChange).change(onChange)
+
+        var submit = $('<div class="bluepill" style="margin-top:20px"/>').text('submit').click(function () {
+            $(this).empty().append(createThrobber())
+            rpc('vote', {
+                ballot : parseBallot(input.val())
+            }, function (arg) {
+                setHash('vote/' + arg)
+            })
+        })
+        left.append(submit)
+
+        var right = $('<div/>')
+
+        right.append($('<div style="font-size:small;font-weight:bold;color:blue;cursor:pointer">').text('preview').click(updatePreview))
+
+        var preview = $('<div style="width:50%;float:left;margin-top:20px"/>')
+        right.append(preview)
+        function updatePreview() {
+            preview.empty().append(drawBallot(parseBallot(input.val()), null, function () {
+                alert('these buttons are just previews. clicking them does nothing.. except show this message')
+            }))
+        }
+
+        setExample(0)
+
+        d.append(_.splitHorz(0.5, 0.5, left, right, false).css('width', '100%'))
+    }
+
     return d
 }
 
 function setHash(s) {
-    if (typeof(s) == 'string') {
-        location.hash = s
-    } else {
-        setHash(_.json(s))
-    }
+    location.hash = s
 }
 
-function onHash(hash) {
-    try {
-        hash = _.unJson(hash.slice(1))
-    } catch (e) {
-        hash = null
-    }
-
-    if (!hash || hash.state == 'main') {
+function onHash() {
+    hash = location.hash.slice(1).split('/')
+    if (!hash[0]) {
         $('body').empty().append(drawMain(hash))
-    } else if (hash.state == 'vote') {
+    } else if (hash[0] == 'vote') {
         $('body').empty().append(drawVote(hash))
     }
 }
 
 $(function () {
     window.onhashchange = function () {
-        onHash(location.hash)
+        onHash()
     }
     window.onhashchange()
 })
